@@ -1,0 +1,57 @@
+#!/opt/perl/bin/perl
+
+use 5.026;
+
+use strict;
+use warnings;
+no  warnings 'syntax';
+
+use experimental 'signatures';
+
+use List::Util qw [min sum];
+
+my $nr_of_barbers =  4; 
+my $haircut_time  = 15;  # In minutes
+
+my $runs = 1_000_000;
+my $total_first  = 0;    # Total time for the first barber to finish
+my $total_others = 0;    # Total time for any other barber to finish
+foreach (1 .. $runs) {
+    my @done = sort {$a <=> $b} map {rand $haircut_time} 1 .. $nr_of_barbers;
+    $total_first  += $done [0];
+    $total_others += sum @done [1 .. $nr_of_barbers - 1];
+}
+
+#
+# Calculate the average time the first barber is done, and the average
+# time any other barbers are done.
+#
+my $avg_first_barber_done = $total_first  / $runs;
+my $avg_other_barber_done = $total_others / $runs / ($nr_of_barbers - 1);
+
+#
+# Case 1, Tiffany is the first barber done. This happens 25% of the time,
+# and the wait time is "time for first barber to be done + 15 minutes",
+#
+# Case 2, Tiffany is not the first barber done, but the other customer
+# is waiting for Tiffany as well. This happens 75% * 25% of the time,
+# and the wait time is "time for other barber to be done + 15 minutes".
+#
+# Case 3, Tiffany is not the first barber to be done, and the other
+# customer doesn't wait for Tiffany. This happens 75% * 75% of the time,
+# and the wait time is "time for other barber to be done".
+#
+
+my $exp_wait_time = .25 *       ($avg_first_barber_done + $haircut_time) +
+                    .75 * .25 * ($avg_other_barber_done + $haircut_time) +
+                    .75 * .75 * ($avg_other_barber_done);
+
+
+#
+# Format the time (to seconds):
+#
+printf "%02dmin %02dsec\n" => int ($exp_wait_time),
+                             60 * ($exp_wait_time - int ($exp_wait_time)) + .5;
+    
+
+__END__
