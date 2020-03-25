@@ -1,0 +1,119 @@
+#!/opt/perl/bin/perl
+
+use 5.026;
+
+use strict;
+use warnings;
+no  warnings 'syntax';
+
+use experimental 'signatures';
+use POSIX qw [lround fesetround
+                     FE_DOWNWARD FE_TONEAREST FE_TOWARDZERO FE_UPWARD];
+
+use Getopt::Long;
+
+#
+# This program takes a price of a widget, and repeatedly applies and
+# unapplies the same discount until the price either stabilizes, or
+# falls below a treshold. We report after how many iterations (days)
+# this happens, what the final prices is, and what percentage of the
+# original price this is.
+#
+
+#
+# Options:
+#    --price <PRICE>:         The inial price (in dollars, fractions of a 
+#                             cent are ignored. Defaults to $100.
+#    --discount <DISCOUNT>:   The discount to apply, in percentages. 
+#                             Defaults to 10%.
+#    --threshold <THRESHOLD>: The threshold under which the current price
+#                             should fall, compared to the original price.
+#                             Defaults to 50%.
+#    --rounding <TYPE>:       What type of rounding to apply. One of:
+#                               - "nearest", rounds to nearest integer.
+#                               - "zero",    rounds towards 0; since we
+#                                            are dealing with positive
+#                                            prices, this is identical to
+#                                            rounding down.
+#                               - "down",    rounds downwards to nearest
+#                                            integer.
+#                               - "up",      rounds upwards to nearest
+#                                            integer.
+#                               - "none",    doesn't do any rounding; this
+#                                            assumes prices can have arbitrary
+#                                            precission.
+#                             Defaults to "nearest".
+#
+
+#
+# All prices are in cents, except the value passed in.
+#
+
+my $CENTS_IN_DOLLARS  = 100;
+my $DEFAULT_PRICE     = 100.00;
+my $DEFAULT_DISCOUNT  =  10;
+my $DEFAULT_THRESHOLD =  50;
+
+GetOptions (
+    'price=f'      =>  \my $price_in_dollars,    # In dollars
+    'discount=f'   =>  \my $discount,            # In percentages
+    'threshold=f'  =>  \my $threshold,           # In percentages
+    'rounding=s'   =>  \my $rounding,
+);
+
+$price_in_dollars //=  $DEFAULT_PRICE;
+$discount         //=  $DEFAULT_DISCOUNT;
+$threshold        //=  $DEFAULT_THRESHOLD;
+
+my $does_rounding   =    1;
+
+if ($rounding) {
+    if ($rounding =~ /none/i) {
+        $does_rounding = 0;
+    }
+    else {
+        my $value = $rounding =~ /nearest/i ? FE_TONEAREST
+                  : $rounding =~ /zero/i    ? FE_TOWARDZERO
+                  : $rounding =~ /down/i    ? FE_DOWNWARD
+                  : $rounding =~ /up/i      ? FE_UPWARD
+                  :                           die "Cannot figure out which " .
+                                                  "rounding you want";
+        fesetround $value if length $value;
+    }
+}
+
+my $morning_adjustment   = 1 - $discount / 100;
+my $afternoon_adjustment = 1 + $discount / 100;
+
+my $original_price = int ($price_in_dollars * $CENTS_IN_DOLLARS);
+
+
+my $morning_price  = $original_price;
+my $days  = 0;
+my $fixed = 0;
+while ($morning_price >= $original_price * $threshold / 100) {
+    $days ++;
+    my $afternoon_price =
+       $does_rounding ? lround $morning_adjustment *
+                       (lround $afternoon_adjustment * $morning_price)
+                      : $morning_adjustment * $afternoon_adjustment *
+                        $morning_price;
+
+    if ($afternoon_price == $morning_price) {
+        $fixed = 1;
+        last;
+    }
+
+    $morning_price = $afternoon_price;
+}
+
+my $price_format = $does_rounding ? "%.2f" : "%f";
+
+printf "Price%s at \$$price_format (%.2f%%) on day %d.\n" =>
+            $fixed ? " (fixed)" : "",
+            $morning_price / $CENTS_IN_DOLLARS, 
+            100 * $morning_price / $original_price, $days;
+
+
+
+__END__
